@@ -3,6 +3,7 @@ import re
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 import requests
+import concurrent.futures
 
 # =====================================================================
 # Pydantic Schemas for Structured Research Flow
@@ -158,18 +159,34 @@ class PydanticAgent:
 
         # --- Step 4: Targeted Explorations ---
         report_progress(0.7, "Step 4/5: Running targeted deep web explorations...")
-        master_sources: List[SearchResult] = list(discovery_results) # copy general sources found in step 2
+        master_sources: List[SearchResult] = list(discovery_results) # copy general sources found in step 2 (will later be extended by taking 3 new search results and adding them)
         deep_dive_logs = ""
         
-        for angle in search_angles:
-            dive_results = self._duckduckgo_search(angle, max_results=3)
-            master_sources.extend(dive_results) # update the bibliography (takes 3 new search results and adds them to master bibliography list)
-            deep_dive_logs += f"\n### Research Angle: {angle}\n"
-            if not dive_results:
-                deep_dive_logs += "No active source matches found.\n"
-            for res in dive_results:
-                deep_dive_logs += f"Source: {res.title} | URL: {res.url}\nFacts/Snippets: {res.snippet}\n\n"
-
+        # 1. Create a helper function that handles a single angle
+        def fetch_angle_data(angle: str):
+            results = self._duckduckgo_search(angle, max_results=3)
+            log_chunk = f"\n### Research Angle: {angle}\n"
+            if not results:
+                log_chunk += "No active source matches found.\n"
+            for res in results:
+                log_chunk += f"Source: {res.title} | URL: {res.url}\nFacts/Snippets: {res.snippet}\n\n"
+            return results, log_chunk
+        
+        # 2. Fire up a ThreadPoolExecutor to run them in parallel
+        # max_workers=4 prevents from spamming the search engine too hard
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            # Map the helper function to list of search angles
+            future_to_angle = {executor.submit(fetch_angle_data, angle): angle for angle in search_angles}
+            
+            # As each parallel search finishes, collect the data
+            for future in concurrent.futures.as_completed(future_to_angle):
+                try:
+                    dive_results, log_chunk = future.result()
+                    master_sources.extend(dive_results)
+                    deep_dive_logs += log_chunk
+                except Exception as e:
+                    deep_dive_logs += f"\n### Research Angle: Failed\nError: {str(e)}\n\n"
+        
         # --- Step 5: High-Fidelity Knowledge Synthesis ---
         report_progress(0.9, "Step 5/5: Synthesizing final high-fidelity report...")
         synthesis_sys = """You are an elite institutional equity researcher and data analyst. 
