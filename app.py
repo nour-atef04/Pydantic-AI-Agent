@@ -1,104 +1,69 @@
-"""
-Gradio interface for Pydantic Agent
-"""
-
 import os
 import gradio as gr
 from agent import PydanticAgent
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Initialize agent
 api_key = os.getenv("OPENROUTER_API_KEY")
-model = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-20b:free")
+model = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free") # Use a robust model for synthesis
 
 if not api_key:
     raise ValueError("OPENROUTER_API_KEY environment variable not set")
 
 agent = PydanticAgent(api_key, model)
 
-
-def chat_interface(user_message: str, history: list) -> tuple[list, str]:
-    """
-    Chat interface for the Pydantic agent
+def run_deep_research(user_query: str, progress=gr.Progress()):
+    if not user_query.strip():
+        return "Please provide a valid query or ticker symbol."
     
-    Args:
-        user_message: User's question
-        history: Chat history
-        
-    Returns:
-        Updated history and empty input field
-    """
-    if not user_message.strip():
-        return history, ""
-    
-    # Get response from agent
-    response = agent.query(user_message)
-    
-    # Add to history in new Gradio format
-    history.append({"role": "user", "content": user_message})
-    history.append({"role": "assistant", "content": response.answer})
-    
-    return history, ""
+    # Process multi-step pipeline
+    response = agent.query(user_query, progress_cb=progress)
+    return response.answer
 
-
-def reset_chat():
-    """Reset chat history"""
-    return [], ""
-
-
-# Create Gradio interface
-with gr.Blocks(title="Pydantic Agent") as demo:
-    gr.Markdown("# 🔧 Pydantic Agent")
-    gr.Markdown("Ask anything about Pydantic! The agent will answer based on the documentation.")
-    
-    chatbot = gr.Chatbot(
-        label="Chat History",
-        height=400,
-    )
+with gr.Blocks(title="Deep Research Agent Engine") as demo:
+    gr.Markdown("# 🔍 Deep Research Intelligence Agent")
+    gr.Markdown("Submit a stock ticker (e.g., *NVDA*, *AAPL*) or complex analytical topic. The agent will isolate variables, execute real-time parallel search threads, and parse a complete intelligence brief.")
     
     with gr.Row():
-        msg = gr.Textbox(
-            label="Your Question",
-            placeholder="Ask a question about Pydantic...",
+        input_box = gr.Textbox(
+            label="Research Target Request",
+            placeholder="Enter ticker symbols or detailed research subjects...",
             lines=1,
-            scale=5,
+            scale=4
         )
-        submit_btn = gr.Button("Send", scale=1)
+        submit_btn = gr.Button("Generate Deep Report", variant="primary", scale=1)
+        
+    output_markdown = gr.Markdown(label="Assembled Market Report Output")
     
-    with gr.Row():
-        clear_btn = gr.Button("Clear Chat", scale=1)
-    
-    gr.Markdown("---")
-    gr.Markdown("""
-    **Tips:**
-    - Ask questions about Pydantic validation, models, and features
-    - Answers are kept short and concise
-    - Based on official Pydantic documentation
-    """)
-    
-    # Set up event handlers
+    # Event wiring
     submit_btn.click(
-        chat_interface,
-        inputs=[msg, chatbot],
-        outputs=[chatbot, msg],
+        fn=lambda: gr.update(interactive=False, value="Generating..."), 
+        outputs=[submit_btn]
+    ).then(
+        fn=run_deep_research,
+        inputs=[input_box],
+        outputs=[output_markdown]
+    ).then(
+        fn=lambda: gr.update(interactive=True, value="Generate Deep Report"), 
+        outputs=[submit_btn]
     )
-    
-    msg.submit(
-        chat_interface,
-        inputs=[msg, chatbot],
-        outputs=[chatbot, msg],
-    )
-    
-    clear_btn.click(reset_chat, outputs=[chatbot, msg])
 
+    input_box.submit(
+        fn=lambda: gr.update(interactive=False, value="Generating..."), 
+        outputs=[submit_btn]
+    ).then(
+        fn=run_deep_research,
+        inputs=[input_box],
+        outputs=[output_markdown]
+    ).then(
+        fn=lambda: gr.update(interactive=True, value="Generate Deep Report"), 
+        outputs=[submit_btn]
+    )
 
 if __name__ == "__main__":
-    demo.launch(
+    demo.queue().launch(
         server_name="0.0.0.0",
         server_port=7860,
-        show_error=True,
-        share=False,
+        show_error=True
     )
